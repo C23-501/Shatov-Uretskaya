@@ -1,6 +1,7 @@
 library ieee;
 use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+use ieee.std_logic_arith.all;
+use ieee.std_logic_unsigned.all;
 
 entity updown_counter is
   port (
@@ -15,26 +16,26 @@ entity updown_counter is
 end entity updown_counter;
 
 architecture behavioral of updown_counter is
-  signal cnt_Addr_r : unsigned(7 downto 0) := (others => '0');
+  signal data_counter_count : std_logic_vector(7 downto 0) := (others => '0');
 begin
 
   process(i_clk, i_reset)
   begin
-    if i_reset = '1' then
-      cnt_Addr_r <= (others => '0');
+    if i_reset = '0' then
+      data_counter_count <= (others => '0');
     elsif rising_edge(i_clk) then
       if i_load = '1' then
-        cnt_Addr_r <= unsigned(i_D);
+        data_counter_count <= i_D;
       elsif i_enable = '1' then
         if i_dir = '1' then
-          cnt_Addr_r <= cnt_Addr_r + 1;
+          data_counter_count <= data_counter_count + 1;
         else
-          cnt_Addr_r <= cnt_Addr_r - 1;
+          data_counter_count <= data_counter_count - 1;
         end if;
       end if;
     end if;
   end process;
 
-  o_Q <= std_logic_vector(cnt_Addr_r);
+  o_Q <= data_counter_count;
 
 end architecture behavioral;
