@@ -2,18 +2,11 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use ieee.math_real.all;
+USE TOP_SDRAM_package.ALL;
 
 entity TOP_SDRAM is
   generic (
-    BURST_LENGTH      : integer := 4;
-    EXT_DATA_WIDTH    : integer := 16;
-    WRITE_MODE        : integer := 0;
-    CAS_LATENCY       : integer := 3;
-    AV_ADDR_WIDTH     : integer := 32;
-    DATA_WIDTH        : integer := 64;
-	 ADDR_WIDTH        : integer := 9; --FIFO
-    BURSTCOUNT_WIDTH  : integer := 8;
-    CMD_WIDTH         : integer := 66 --???
+  --?
   );
   port (
     -- Внешний тактовый вход
@@ -29,12 +22,12 @@ entity TOP_SDRAM is
     write_master : in std_logic;
     write_data_master : in std_logic_vector(63 downto 0);
     byte_enable_master: in std_logic_vector(7 downto 0);
-    burstcount_master : in std_logic_vector(3 downto 0);
+    burstcount_master : in std_logic_vector(4 downto 0);
     burstenable_master : in std_logic;
 
 	 read_data_avs : out std_logic_vector(63 downto 0);
     waitrequest_avs : out std_logic;
-
+	 read_data_valid : out std_logic;
     -- SDRAM
     A           : out std_logic_vector(11 downto 0);
     BS          : out std_logic_vector(1 downto 0);
@@ -43,10 +36,8 @@ entity TOP_SDRAM is
     nCAS        : out std_logic;
     nWE         : out std_logic;
     CKE         : out std_logic;
-    DQM         : out std_logic;
-	 --??
-	 sdram_dq    : inout std_logic_vector(EXT_DATA_WIDTH-1 downto 0);
-    sdram_clk   : out std_logic
+    DQM         : out std_logic_vector(1 downto 0);
+	 DQ    : out std_logic_vector(15 downto 0);
 
   
   );
@@ -54,27 +45,6 @@ end entity TOP_SDRAM;
 
 
 architecture rtl of TOP_SDRAM is
-
-  -- интерфейс Avalon к FIFO
-    -- Командная FIFO записи
-   signal wr_cmd_full : std_logic;
-   signal wr_cmd : std_logic_vector(65 downto 0);
-   signal wr_cmd_write : std_logic;
-   
-    -- Данные FIFO записи
-   signal wr_data_full : std_logic;
-   signal wr_data : std_logic_vector(63 downto 0);
-   signal wr_data_write : std_logic;
-   
-    -- Командная FIFO чтения
-   signal rd_cmd_empty : std_logic;
-   signal rd_cmd : std_logic_vector(33 downto 0);
-   signal rd_cmd_read : std_logic;
-   
-    -- Данные FIFO чтения
-   signal rd_data_empty : std_logic;
-   signal rd_data : std_logic_vector(63 downto 0);
-   signal rd_data_read : std_logic;
 
   -- === PLL / clocks / reset synchronization
   signal pll_clk_80MHz    : std_logic := '0'; -- 80 MHz -> Avalon
@@ -85,7 +55,7 @@ architecture rtl of TOP_SDRAM is
   signal clk_avalon  : std_logic;
   signal clk_sdram   : std_logic;
 
-  -- global reset that depends on reset_n and pll_locked
+  -- global reset зависит от reset_n и pll_locked
   signal global_reset_n : std_logic;
 
   -- reset synchronizers 
@@ -95,62 +65,48 @@ architecture rtl of TOP_SDRAM is
   signal reset_sdram_n   : std_logic := '0';
   
    -- Сигналы от FSM контроллера к подсистеме
-  signal StateFSM_sig   : std_logic_vector(3 downto 0);
-  signal BS_FSM_sig     : std_logic_vector(1 downto 0);
-  signal A_FSM_sig      : std_logic_vector(11 downto 0);
+  signal StateSubsys   : StateSubsys_type;
+  signal StateFSM      : StateFSM_type;
+  signal A_FSM         : std_logic_vector(11 DOWNTO 0);	
   
   -- Сигналы от подсистемы к арбитру
-  signal A_Subsys       : std_logic_vector(11 downto 0);
-  signal BS_Subsys      : std_logic_vector(1 downto 0);
-  signal nCS_Subsys     : std_logic;
-  signal nRAS_Subsys    : std_logic;
-  signal nCAS_Subsys    : std_logic;
-  signal nWE_Subsys     : std_logic;
-  signal CKE_Subsys     : std_logic;
-  signal DQM_Subsys     : std_logic;
-  signal State_out_Subsys : std_logic_vector(3 downto 0);
+  signal nCS_Subsys  :     std_logic;
+  signal nRAS_Subsys :     std_logic;
+  signal nCAS_Subsys :     std_logic;
+  signal nWE_Subsys  :     std_logic;
+  signal CKE_Subsys  :     std_logic;
+  signal DQM_Subsys  :     std_logic_vector(1 DOWNTO 0);
+  signal BS_Subsys   :     std_logic_vector (1 DOWNTO 0);
+  signal A_Subsys    :     std_logic_vector (11 DOWNTO 0);
   
     -- Сигналы от FSM контроллера к арбитру (прямые)
-  signal nCS_FSM_sig    : std_logic;
-  signal nRAS_FSM_sig   : std_logic;
-  signal nCAS_FSM_sig   : std_logic;
-  signal nWE_FSM_sig    : std_logic;
-  signal CKE_FSM_sig    : std_logic;
-  signal DQM_FSM_sig    : std_logic;
-  
-  -- Данные SDRAM
-  signal sdram_dq_sig   : std_logic_vector(EXT_DATA_WIDTH-1 downto 0);
-  
+	signal StateFSM    : StateFSM_type;
+	signal nCS_FSM     : std_logic;
+	signal nRAS_FSM    : std_logic;
+	signal nCAS_FSM    : std_logic;
+	signal nWE_FSM     : std_logic;
+	signal CKE_FSM     : std_logic;
+	signal DQM_FSM     : std_logic_vector (1 DOWNTO 0);
+	signal BS_FSM      : std_logic_vector (1 DOWNTO 0);
+--A_FSM  
   --FIFO
-  signal wr_cmd_fifo_data_i : std_logic_vector(CMD_WIDTH-1 downto 0);
-  signal wr_cmd_fifo_data_o : std_logic_vector(CMD_WIDTH-1 downto 0);
-  signal wr_cmd_fifo_wr_empty : std_logic;
-  signal wr_cmd_fifo_wr_full : std_logic;
-  signal wr_cmd_fifo_wr_used : std_logic_vector(integer(ceil(log2(real(128)))) downto 0);
-  
-  signal wr_cmd_fifo_rd_empty : std_logic;
-  signal wr_cmd_fifo_rd_full : std_logic;
-  signal wr_cmd_fifo_rd_used : std_logic_vector(integer(ceil(log2(real(128)))) downto 0);
-  signal rd_cmd_fifo_rd_en : std_logic;
-  signal rd_cmd_fifo_data_i : std_logic_vector(33 downto 0);
-  signal rd_cmd_fifo_wr_en : std_logic;
-  signal wr_data_to_fsm : std_logic_vector(63 downto 0);  -- От Avalon к FSM
-  signal wr_data_from_fsm : std_logic_vector(63 downto 0); -- От FSM к SDRAM
-  -- Для данных FIFO (data_fifo)
-  signal data_fifo_data_i : std_logic_vector(DATA_WIDTH-1 downto 0);
-  signal data_fifo_data_o : std_logic_vector(DATA_WIDTH-1 downto 0);
-  signal data_fifo_wr_empty : std_logic;
-  signal data_fifo_wr_full : std_logic;
-  signal data_fifo_wr_used : std_logic_vector(integer(ceil(log2(real(1024)))) downto 0);
-  signal data_fifo_rd_empty : std_logic;
-  signal data_fifo_rd_full : std_logic;
-  signal data_fifo_rd_used : std_logic_vector(integer(ceil(log2(real(1024)))) downto 0);
- 
+	signal data_i     : std_logic_vector(DATA_WIDTH-1 downto 0);
+	signal wr_clk     : std_logic;
+	signal wr_empty   : std_logic;
+	signal wr_full    : std_logic;
+	signal wr_used    : std_logic_vector(Log2(FIFO_DEPTH)-1 downto 0);
+	signal wr_reset   : std_logic;
+	signal wr_en      : std_logic;
+	signal data_o     : std_logic_vector(DATA_WIDTH-1 downto 0);
+	signal rd_clk     : std_logic;
+	signal rd_empty   : std_logic;
+	signal rd_full    : std_logic;
+	signal rd_used    : std_logic_vector(Log2(FIFO_DEPTH)-1 downto 0);
+	signal rd_reset   : std_logic;
+	signal rd_en      : std_logic;
 
  -- Сигналы для управления состоянием
-  type sdram_state_type is (IDLE, INIT, REFRESH, ACTIVE, READ, WRITE, PRECHARGE);
-  signal current_state  : sdram_state_type;
-  
+
   -- компоненты
 
   component avalon_slave
@@ -164,7 +120,7 @@ architecture rtl of TOP_SDRAM is
     write_master : in std_logic;
     write_data_master : in std_logic_vector(63 downto 0);
     byte_enable_master: in std_logic_vector(7 downto 0);
-    burstcount_master : in std_logic_vector(3 downto 0);
+    burstcount_master : in std_logic_vector(4 downto 0);
     burstenable_master : in std_logic;
 
     -- Avalon-MM интерфейс к мастеру
@@ -181,6 +137,7 @@ architecture rtl of TOP_SDRAM is
     wr_data_full : in std_logic;
     wr_data : out std_logic_vector(63 downto 0);
     wr_data_write : out std_logic;
+	 wr_data_used : in std_logic_vector(9 downto 0);
    
     -- Командная FIFO чтения
     rd_cmd_empty : in std_logic;
@@ -197,8 +154,8 @@ architecture rtl of TOP_SDRAM is
 -- компонент FIFO
 	component FIFO is
     generic (
-        DATA_WIDTH: integer := 64;
-        FIFO_DEPTH: integer := 512
+        DATA_WIDTH : integer := DATA_WIDTH;
+        FIFO_DEPTH : integer := FIFO_DEPTH
     );
     port(
         data_i: in std_logic_vector(DATA_WIDTH - 1 downto 0);
@@ -220,118 +177,120 @@ end component;
 
 -- Компонент подсистемы SDRAM
 component SDRAM_Subsystem is
-  port (
-    -- Основные сигналы
-    nRst       : in  std_logic;
-    CLK        : in  std_logic;
-    
-    -- Входы от FSM (контроллера)
-    StateFSM   : in  std_logic_vector(3 downto 0); -- состояние FSM
-    BS_FSM     : in  std_logic_vector(1 downto 0); -- выбор банка от FSM
-    A_FSM      : in  std_logic_vector(11 downto 0); -- адрес от FSM
-    
-    -- Выходы управления SDRAM
-    nCS        : out std_logic;
-    nRAS       : out std_logic;
-    nCAS       : out std_logic;
-    nWE        : out std_logic;
-    CKE        : out std_logic;
-    DQM        : out std_logic;
-    BS         : out std_logic_vector(1 downto 0);
-    A          : out std_logic_vector(11 downto 0);
-    
-    -- Состояние подсистемы
-    State_out  : out std_logic_vector(3 downto 0)
-  );
+   GENERIC(
+		Burst_length : integer := Burst_length;
+      CAS_Latency  : integer := CAS_Latency;
+      CLK_Freq_MHz : integer := CLK_Freq_MHz
+   );
+   PORT( 
+      -- Общие
+      nRst      : IN     std_logic;
+      CLK       : IN     std_logic;
+      -- Входы с FSM
+      StateFSM  : IN     StateFSM_type;
+      A_FSM     : IN     std_logic_vector (11 DOWNTO 0);
+      -- Выходы на арбитр
+      nCS       : OUT    std_logic;
+      nRAS      : OUT    std_logic;
+      nCAS      : OUT    std_logic;
+      nWE       : OUT    std_logic;
+      CKE       : OUT    std_logic;
+      DQM       : OUT    std_logic_vector (1 DOWNTO 0);
+      BS        : OUT    std_logic_vector (1 DOWNTO 0);
+      A         : OUT    std_logic_vector (11 DOWNTO 0);
+      State_out : OUT    StateSubsys_type
+   );
+
 end component;
 
 -- Компонент арбитра SDRAM
 component SDRAM_Arbiter is
-  port (
-    -- Основные сигналы
-    nRst        : in  std_logic;
-    CLK         : in  std_logic;
-    
-    -- Состояние FSM
-    StateFSM    : in  std_logic_vector(3 downto 0);
-    
-    -- Сигналы от подсистемы
-    A_Subsys    : in  std_logic_vector(11 downto 0);
-    BS_Subsys   : in  std_logic_vector(1 downto 0);
-    nCS_Subsys  : in  std_logic;
-    nRAS_Subsys : in  std_logic;
-    nCAS_Subsys : in  std_logic;
-    nWE_Subsys  : in  std_logic;
-    CKE_Subsys  : in  std_logic;
-    DQM_Subsys  : in  std_logic;
-    
-    -- Сигналы от FSM (для других операций)
-    A_FSM       : in  std_logic_vector(11 downto 0);
-    BS_FSM      : in  std_logic_vector(1 downto 0);
-    nCS_FSM     : in  std_logic;
-    nRAS_FSM    : in  std_logic;
-    nCAS_FSM    : in  std_logic;
-    nWE_FSM     : in  std_logic;
-    CKE_FSM     : in  std_logic;
-    DQM_FSM     : in  std_logic;
-    
-    -- Выходные сигналы к SDRAM
-    A           : out std_logic_vector(11 downto 0);
-    BS          : out std_logic_vector(1 downto 0);
-    nCS         : out std_logic;
-    nRAS        : out std_logic;
-    nCAS        : out std_logic;
-    nWE         : out std_logic;
-    CKE         : out std_logic;
-    DQM         : out std_logic
-  );
+   PORT( 
+      -- Общие
+      nRst        : IN     std_logic;
+      CLK         : IN     std_logic;
+      -- От FSM
+      StateFSM    : IN     StateFSM_type;
+      nCS_FSM     : IN     std_logic;
+      nRAS_FSM    : IN     std_logic;
+      nCAS_FSM    : IN     std_logic;
+      nWE_FSM     : IN     std_logic;
+      CKE_FSM     : IN     std_logic;
+      DQM_FSM     : IN     std_logic_vector (1 DOWNTO 0);
+      BS_FSM      : IN     std_logic_vector (1 DOWNTO 0);
+      A_FSM       : IN     std_logic_vector (11 DOWNTO 0);
+      --  От подсистемы
+      nCS_Subsys  : IN     std_logic;
+      nRAS_Subsys : IN     std_logic;
+      nCAS_Subsys : IN     std_logic;
+      nWE_Subsys  : IN     std_logic;
+      CKE_Subsys  : IN     std_logic;
+      DQM_Subsys  : IN     std_logic_vector(1 DOWNTO 0);
+      BS_Subsys   : IN     std_logic_vector (1 DOWNTO 0);
+      A_Subsys    : IN     std_logic_vector (11 DOWNTO 0);
+      --  Выходы на SDRAM
+      nCS         : OUT    std_logic;
+      nRAS        : OUT    std_logic;
+      nCAS        : OUT    std_logic;
+      nWE         : OUT    std_logic;
+      CKE         : OUT    std_logic;
+      DQM         : OUT    std_logic_vector (1 DOWNTO 0);
+      BS          : OUT    std_logic_vector (1 DOWNTO 0);
+      A           : OUT    std_logic_vector (11 DOWNTO 0)
+   );
 end component;
 
 -- Компонент FSM контроллера
-component SDRAM_FSM_Controller is
-  generic (
-	 EXT_DATA_WIDTH : integer;
-    CAS_LATENCY    : integer;
-    BURST_LENGTH   : integer
-  );
-  port (
-    -- Основные сигналы
-    clk       : in  std_logic;
-    reset_n   : in  std_logic;
-    
-    -- Интерфейс данных от FIFO
-    rd_cmd    : in  std_logic_vector(33 downto 0);
-    rd_cmd_empty : in std_logic;
-    rd_cmd_read : out std_logic;
-    
-    rd_data   : in  std_logic_vector(63 downto 0);
-    rd_data_empty : in std_logic;
-    rd_data_read : out std_logic;
-    
-    wr_data   : out std_logic_vector(63 downto 0);
-    wr_data_full : in std_logic;
-    wr_data_write : out std_logic;
-	 wr_cmd         : in  std_logic_vector(65 downto 0);
-    wr_cmd_empty   : in  std_logic;
-    wr_cmd_read    : out std_logic;
-    
-    -- Выходы управления для подсистемы
-    StateFSM  : out std_logic_vector(3 downto 0);
-    BS_FSM    : out std_logic_vector(1 downto 0);
-    A_FSM     : out std_logic_vector(11 downto 0);
-    
-    -- Прямые выходы для арбитра (альтернативные)
-    nCS_FSM   : out std_logic;
-    nRAS_FSM  : out std_logic;
-    nCAS_FSM  : out std_logic;
-    nWE_FSM   : out std_logic;
-    CKE_FSM   : out std_logic;
-    DQM_FSM   : out std_logic;
-    
-    -- Интерфейс данных SDRAM
-    sdram_dq  : inout std_logic_vector(EXT_DATA_WIDTH-1 downto 0)
-  );
-end component;
+component SDRAM_FSM is
+   GENERIC(
+      DataWidth   => DataWidth,
+      BurstLength => Burst_length,
+      CAS_Latency => CAS_Latency,
+      tRCD_Cycles => tRCD_Cycles,
+      tRP_Cycles  => tRP_Cycles,
+      AddressWidth => AddressWidth
+   );
+   PORT(
+      -- Общие
+      Clk           : IN  std_logic;
+      nRst          : IN  std_logic;
+
+      -- Взаимодействие с Subsystem
+      StateSubsys   : IN  StateSubsys_type;
+      StateFSM      : OUT StateFSM_type;
+      A_FSM         : OUT std_logic_vector(11 DOWNTO 0);
+
+      -- Взаимодействие с Avalon
+      -- Чтение
+      read_cmd_fifo_in     : IN  std_logic_vector(57 DOWNTO 0); -- 1op + 25addr + 8be1 + 8be2 + 8id + 8size
+      read_cmd_fifo_empty  : IN  std_logic;
+      read_cmd_fifo_en     : OUT std_logic;
+
+      read_data_fifo_in    : IN  std_logic_vector(63 DOWNTO 0);
+      read_data_fifo_empty : IN  std_logic;
+      read_data_fifo_en    : OUT std_logic;
+
+      -- Запись
+      write_cmd_fifo_out    : OUT std_logic_vector(15 DOWNTO 0); -- 8id + 8size
+      write_cmd_fifo_full   : IN  std_logic;
+      write_cmd_fifo_en     : OUT std_logic;
+
+      write_data_fifo_out   : OUT std_logic_vector(63 DOWNTO 0);
+      write_data_fifo_full  : IN  std_logic;
+      write_data_fifo_en    : OUT std_logic;
+
+      -- Выходы на арбитр SDRAM
+      nCS           : OUT std_logic;
+      nRAS          : OUT std_logic;
+      nCAS          : OUT std_logic;
+      nWE           : OUT std_logic;
+      CKE           : OUT std_logic;
+      DQ            : OUT std_logic_vector(15 downto 0);
+      DQM           : OUT std_logic_vector(1 DOWNTO 0);
+      BS            : OUT std_logic_vector(1 DOWNTO 0);
+      A             : OUT std_logic_vector(11 DOWNTO 0)
+   );
+END component;
   
     component PLL_i12MHz_o80MHz_o160MHz IS
 	PORT
@@ -477,7 +436,6 @@ rd_cmd_fifo_inst : FIFO
         rd_reset  => reset_avalon_n,
         rd_en     => rd_cmd_read
     );
-
 -- FIFO данных (ширина 64 бита, глубина 1024)
 data_fifo_inst : FIFO
     generic map (
@@ -504,7 +462,7 @@ data_fifo_inst : FIFO
         rd_en     => rd_data_read
     );
 	 
-fsm_controller_inst : SDRAM_FSM_Controller
+fsm_inst : SDRAM_FSM
   generic map (
     EXT_DATA_WIDTH => EXT_DATA_WIDTH,
     CAS_LATENCY    => CAS_LATENCY,
@@ -554,22 +512,22 @@ fsm_controller_inst : SDRAM_FSM_Controller
     CLK       => clk_sdram,
     
     -- Входы от FSM контроллера
-    StateFSM  => StateFSM_sig,
-    BS_FSM    => BS_FSM_sig,
-    A_FSM     => A_FSM_sig,
-    
-    -- Выходы управления
-    nCS       => nCS_Subsys,
-    nRAS      => nRAS_Subsys,
-    nCAS      => nCAS_Subsys,
-    nWE       => nWE_Subsys,
-    CKE       => CKE_Subsys,
-    DQM       => DQM_Subsys,
-    BS        => BS_Subsys,
-    A         => A_Subsys,
-    
-    -- Состояние подсистемы
-    State_out => State_out_Subsys
+      StateFSM  => StateFSM_sig,
+      BS_FSM    => BS_FSM_sig,
+      A_FSM     => A_FSM_sig,
+      
+      -- Выходы управления
+      nCS       => nCS_Subsys,
+      nRAS      => nRAS_Subsys,
+      nCAS      => nCAS_Subsys,
+      nWE       => nWE_Subsys,
+      CKE       => CKE_Subsys,
+      DQM       => DQM_Subsys,
+      BS        => BS_Subsys,
+      A         => A_Subsys,
+      
+      -- Состояние подсистемы
+      State_out => State_out_Subsys
   );
   
   arbiter_inst : SDRAM_Arbiter
