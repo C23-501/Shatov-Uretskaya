@@ -3,6 +3,7 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use ieee.math_real.all;
 use work.TOP_SDRAM_package.all;
+use work.sdram_subsys_package.all;
 
 entity TOP_SDRAM is
   generic (
@@ -130,7 +131,9 @@ architecture rtl of TOP_SDRAM is
   -- компоненты
   
     signal pll_areset : std_logic;
-	 
+	 -- Инвертированные сигналы сброса для FIFO
+	signal reset_avalon_active : std_logic;
+	signal reset_sdram_active  : std_logic;
 	  
 	 
   component AvalonMM_Slave
@@ -335,6 +338,8 @@ component SdramFsm is
 
 begin
 	pll_areset <= not reset_n;
+	reset_avalon_active <= not reset_avalon_n;
+	reset_sdram_active  <= not reset_sdram_n;
   -- надо сгенерировать ALTPLL с inclk0 = 12.000 MHz
   -- и выходами c0 ~80 MHz, c1 ~166.667 MHz. Подставьте имя сгенерированного компонента.
   --??????
@@ -425,7 +430,7 @@ begin
         wr_empty => open,
         wr_full  => av_wr_cmd_full,
         wr_used  => open,
-        wr_reset => not reset_avalon_n,
+        wr_reset => reset_avalon_active,
         wr_en    => av_wr_cmd_write,
         
         data_o   => fsm_rd_cmd_in,
@@ -433,7 +438,7 @@ begin
         rd_empty => fsm_rd_cmd_empty,
         rd_full  => open,
         rd_used  => open,
-        rd_reset => not reset_sdram_n,
+        rd_reset => reset_sdram_active,
         rd_en    => fsm_rd_cmd_en
     );
 
@@ -449,7 +454,7 @@ begin
         wr_empty => open,
         wr_full  => av_wr_data_full,
         wr_used  => av_wr_data_used,
-        wr_reset => not reset_avalon_n,
+        wr_reset => reset_avalon_active,
         wr_en    => av_wr_data_write,
         
         data_o   => fsm_rd_data_in,
@@ -457,7 +462,7 @@ begin
         rd_empty => fsm_rd_data_empty,
         rd_full  => open,
         rd_used  => open,
-        rd_reset => not reset_sdram_n,
+        rd_reset => reset_sdram_active,
         rd_en    => fsm_rd_data_en
     );
 
@@ -473,7 +478,7 @@ begin
         wr_empty => open,
         wr_full  => fsm_wr_data_full,
         wr_used  => open,
-        wr_reset => not reset_sdram_n,
+        wr_reset => reset_sdram_active,
         wr_en    => fsm_wr_data_en,
         
         data_o   => av_rd_data,
@@ -481,7 +486,7 @@ begin
         rd_empty => av_rd_data_empty,
         rd_full  => open,
         rd_used  => open,
-        rd_reset => not reset_avalon_n,
+        rd_reset => reset_avalon_active,
         rd_en    => av_rd_data_read
     );
 
@@ -497,7 +502,7 @@ begin
         wr_empty => open,
         wr_full  => fsm_wr_cmd_full,
         wr_used  => open,
-        wr_reset => not reset_avalon_n,
+        wr_reset => reset_avalon_active,
         wr_en    => fsm_wr_cmd_en,
         
         data_o   => av_rd_cmd_data,
@@ -505,7 +510,7 @@ begin
         rd_empty => av_rd_cmd_empty,
         rd_full  => open,
         rd_used  => open,
-        rd_reset => not reset_sdram_n,
+        rd_reset => reset_sdram_active,
         rd_en    => av_rd_cmd_read
     );
 	 

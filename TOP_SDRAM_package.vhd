@@ -16,8 +16,8 @@ package TOP_SDRAM_package is
   constant AddressWidth    : integer := 25;
   constant FIFO_LOG2_DEPTH : integer := 10;
 
-  type StateFSM_type is (Idle, Waiting, Reading, Writing, Activation);
-  type StateSubsys_type is (Idle, Ctr_request, Precharge, SetMR, Refresh, ValidOp, Waiting_precharge, Waiting_SetMR, Waiting_refresh);-- FSM состояния
+ -- type StateFSM_type is (Idle, Waiting, Reading, Writing, Activation);
+ -- type StateSubsys_type is (Idle, Ctr_request, Precharge, SetMR, Refresh, ValidOp, Waiting_precharge, Waiting_SetMR, Waiting_refresh);-- FSM состояния
 
   type my_ram64 is array (natural range <>) of std_logic_vector(63 downto 0);--???
   

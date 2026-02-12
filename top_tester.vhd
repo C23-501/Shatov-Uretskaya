@@ -4,16 +4,16 @@ use ieee.std_logic_arith.all;
 use ieee.std_logic_unsigned.all;
 use work.TOP_SDRAM_package.all;
 
-entity TOP_SDRAM_tester is
+entity top_tester is
   port (
     clk_12MHz : in    std_logic;
     reset_n   : in    std_logic;
     avs       : inout avlmm_a24b_d64_t;
     sim_done  : out   boolean
   );
-end entity TOP_SDRAM_tester;
+end entity top_tester;
 
-architecture behavioral of TOP_SDRAM_tester is
+architecture behavioral of top_tester is
   
   -- сигналы для burst операций
   signal write_data_array : my_ram64(0 to 31) := (others => (others => '0'));
@@ -66,7 +66,7 @@ begin
       clk       => clk_12MHz,
       address   => test_address,
       writedata => test_data,
-      bytecount => 4  -- только 4 байта
+      bytecount => 4
     );
     
     wait for 1 us;

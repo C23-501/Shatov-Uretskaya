@@ -3,10 +3,10 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use work.TOP_SDRAM_package.all;
 
-entity TOP_SDRAM_tb is
-end entity TOP_SDRAM_tb;
+entity top_tb is
+end entity top_tb; --TOP_SDRAM_tb
 
-architecture testbench of TOP_SDRAM_tb is
+architecture testbench of top_tb is
 
   constant CLK_12MHz_PERIOD : time := 83.333 ns;
   
@@ -25,6 +25,15 @@ architecture testbench of TOP_SDRAM_tb is
   signal waitrequest_avs    : std_logic;
   signal read_data_valid    : std_logic;
   
+  signal A    : std_logic_vector(11 downto 0);
+  signal BS   : std_logic_vector(1 downto 0);
+  signal nCS  : std_logic;
+  signal nRAS : std_logic;
+  signal nCAS : std_logic;
+  signal nWE  : std_logic;
+  signal CKE  : std_logic;
+  signal DQM  : std_logic_vector(1 downto 0);
+  signal DQ   : std_logic_vector(15 downto 0);
   -- Record для тестера
   signal avs : avlmm_a24b_d64_t;
   
@@ -54,7 +63,18 @@ architecture testbench of TOP_SDRAM_tb is
       burstenable_master : in  std_logic;
       read_data_avs      : out std_logic_vector(63 downto 0);
       waitrequest_avs    : out std_logic;
-      read_data_valid    : out std_logic
+      read_data_valid    : out std_logic;
+		
+		
+		A                  : out std_logic_vector(11 downto 0);
+      BS                 : out std_logic_vector(1 downto 0);
+      nCS                : out std_logic;
+      nRAS               : out std_logic;
+      nCAS               : out std_logic;
+      nWE                : out std_logic;
+      CKE                : out std_logic;
+      DQM                : out std_logic_vector(1 downto 0);
+      DQ                 : out std_logic_vector(15 downto 0)
     );
   end component;
 
@@ -119,7 +139,19 @@ begin
       burstenable_master => burstenable_master,
       read_data_avs      => read_data_avs,
       waitrequest_avs    => waitrequest_avs,
-      read_data_valid    => read_data_valid);
+      read_data_valid    => read_data_valid,
+		
+		
+		A   => A,
+      BS  => BS,
+      nCS => nCS,
+      nRAS  => nRAS,
+      nCAS=> nCAS,
+      nWE => nWE,
+      CKE => CKE,
+      DQM => DQM,
+      DQ  => DQ
+		);
 
   -- Процесс сброса
   reset_process : process
@@ -131,7 +163,7 @@ begin
   end process;
 
   -- Тестер
-  tester_inst : entity work.TOP_SDRAM_tester
+  tester_inst : entity work.top_tester
     port map (
       clk_12MHz => clk_12MHz,
       reset_n   => reset_n,
