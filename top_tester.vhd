@@ -1,93 +1,213 @@
 library ieee;
 use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
-use work.TOP_SDRAM_package.all;  -- Подключаем пакет с процедурами
+use ieee.std_logic_arith.all;
+use ieee.std_logic_unsigned.all;
+use work.TOP_SDRAM_package.all;
 
-entity top_tester is
-end entity top_tester;
+entity TOP_SDRAM_tester is
+  port (
+    clk_12MHz : in    std_logic;
+    reset_n   : in    std_logic;
+    avs       : inout avlmm_a24b_d64_t;
+    sim_done  : out   boolean
+  );
+end entity TOP_SDRAM_tester;
 
-architecture behavior of top_tester is
-
-  -- Сигналы для тестирования
-  signal clk_12MHz        : std_logic := '0';
-  signal reset_n          : std_logic := '0';
-  signal address_master   : std_logic_vector(24 downto 0) := (others => '0');
-  signal read_master      : std_logic := '0';
-  signal write_master     : std_logic := '0';
-  signal write_data_master : std_logic_vector(63 downto 0) := (others => '0');
-  signal byte_enable_master : std_logic_vector(7 downto 0) := (others => '0');
-  signal burstcount_master  : std_logic_vector(4 downto 0) := (others => '0');
-  signal burstenable_master : std_logic := '0';
-  signal read_data_avs    : std_logic_vector(63 downto 0);
-  signal waitrequest_avs  : std_logic := '0';
-  signal read_data_valid  : std_logic := '0';
-  signal A                : std_logic_vector(11 downto 0);
-  signal BS               : std_logic_vector(1 downto 0);
-  signal nCS              : std_logic;
-  signal nRAS             : std_logic;
-  signal nCAS             : std_logic;
-  signal nWE              : std_logic;
-  signal CKE              : std_logic;
-  signal DQM              : std_logic_vector(1 downto 0);
-  signal DQ               : std_logic_vector(15 downto 0);
-
-  -- Тестируемые процедуры
-  procedure emulate_waitrequest_read_write(
-    signal avs : inout avlmm_a24b_d64_t;
-    constant clk_ticks : integer
-  ) is
-  begin
-    -- Имитация задержки с использованием waitrequest
-    if avs.waitrequest_avs = '1' then
-      wait until avs.waitrequest_avs = '0';
-    end if;
-  end procedure;
-
-  -- Генератор тактового сигнала
-  constant CLK_PERIOD : time := 83.333 ns; -- для 12 MHz
-
+architecture behavioral of TOP_SDRAM_tester is
+  
+  -- сигналы для burst операций
+  signal write_data_array : my_ram64(0 to 31) := (others => (others => '0'));
+  signal read_data_array  : my_ram64(0 to 31) := (others => (others => '0'));
+  
 begin
-  -- Процесс генерации тактов
-  clk_process : process
-  begin
-    clk_12MHz <= '0';
-    wait for CLK_PERIOD / 2;
-    clk_12MHz <= '1';
-    wait for CLK_PERIOD / 2;
-  end process;
 
-  -- Процесс тестирования
+  -- основной тестовый процесс
   test_process : process
+    variable test_address : std_logic_vector(24 downto 0);
+    variable test_data    : std_logic_vector(63 downto 0);
   begin
-    -- Тест 1: Одиночная передача данных (write_master = '1' и burstcount_master = 0)
-    write_master <= '1';
-    write_data_master <= x"123456789ABCDEF0";  -- Пример данных
-    burstcount_master <= "00000";  -- Одиночная передача
-    process_single_data_transfer(avs);  -- Вызов процедуры для одиночной передачи
-    wait_clock(2);  -- Ожидаем 2 такта (с использованием процедуры из пакета)
-
-    -- Тест 2: Бурстовая передача данных (write_master = '1' и burstcount_master > 0)
-    write_master <= '1';
-    write_data_master <= x"123456789ABCDEF0";
-    burstcount_master <= "00001";  -- Бурст из 2 элементов
-    process_burst_data_transfer(avs, 5);  -- Вызов процедуры для бурстовой передачи
-    wait_clock(10);  -- Ожидаем 10 тактов
-
-    -- Тест 3: Эмуляция задержки через `waitrequest` для записи и чтения
-    write_master <= '1';
-    read_master <= '1';
-    write_data_master <= x"0000000000000000";  -- Пример записи
-    address_master <= "000000000000001";  -- Пример адреса
-    waitrequest_avs <= '1';  -- Активируем `waitrequest` для имитации задержки
-    emulate_waitrequest_read_write(avs, 10);  -- Вызов процедуры для эмуляции `waitrequest`
-    wait_clock(15);  -- Ожидаем 15 тактов
-
-    -- Тест 4: Декуплированный `waitrequest` для чтения/записи
-    waitrequest_avs <= '0';  -- Деактивируем `waitrequest`
-    emulate_decoupled_waitrequest(avs, 10);  -- Вызов процедуры для декуплированного `waitrequest`
-    wait_clock(15);  -- Ожидаем 15 тактов
-    -- Завершаем тест
+    
+    -- инициализация
+    sim_done <= false;
+    
+    -- ждем окончания сброса и стабилизации PLL
+    wait until reset_n = '1';
+    wait for 2 us; -- время для инициализации PLL и FIFO
+    
+    report "START: TOP_SDRAM Testing" severity note;
+    
+    
+    -- TEST 1: одиночная запись
+    report "TEST 1: Single Write" severity note;
+    
+    test_address := "0000000000000000000000000"; -- адрес 0x0000000
+    test_data    := X"1122334455667788";
+    
+    master_single_write(
+      avs       => avs,
+      clk       => clk_12MHz,
+      address   => test_address,
+      writedata => test_data,
+      bytecount => 8  -- 8 байт (полное слово)
+    );
+    
+    wait for 1 us;
+    report "TEST 1: DONE - Single write at address 0x0000000" severity note;
+    
+    
+    -- TEST 2: одиночная запись с частичным byte_enable
+    report "TEST 2: Single Write with partial byte_enable" severity note;
+    
+    test_address := "0000000000000000000001000"; -- адрес 0x0000008
+    test_data    := X"AABBCCDDEE112233";
+    
+    master_single_write(
+      avs       => avs,
+      clk       => clk_12MHz,
+      address   => test_address,
+      writedata => test_data,
+      bytecount => 4  -- только 4 байта
+    );
+    
+    wait for 1 us;
+    report "TEST 2: DONE - Partial write at address 0x0000008" severity note;
+    
+    
+    -- TEST 3: одиночное чтение
+    report "TEST 3: Single Read" severity note;
+    
+    test_address := "0000000000000000000000000"; -- адрес 0x0000000
+    
+    master_single_read(
+      avs       => avs,
+      clk       => clk_12MHz,
+      address   => test_address,
+      bytecount => 8
+    );
+    
+    -- ждем данные
+    wait until avs.read_data_valid = '1';
+    wait for 100 ns;
+    
+    -- проверка прочитанных данных
+    report "TEST 3: DONE - Read data: 0x" & 
+           integer'image(CONV_INTEGER(avs.read_data_avs(31 downto 0))) 
+           severity note;
+    
+    
+    -- TEST 4: burst запись
+    report "TEST 4: Burst Write" severity note;
+    
+    -- подготовка тестовых данных для burst записи
+    for i in 0 to 7 loop
+      write_data_array(i) <= CONV_STD_LOGIC_VECTOR(16#A0000000# + i*16#11111111#, 64);
+    end loop;
+    
+    test_address := "0000000000000000000010000"; -- адрес 0x0000010
+    
+    master_burst_write(avs, write_data_array, clk_12MHz, test_address, 64);
+    
+    wait for 2 us;
+    report "TEST 4: DONE - Burst write of 8 words at address 0x0000010" severity note;
+    
+    
+    -- TEST 5: burst чтение
+    report "TEST 5: Burst Read" severity note;
+    
+    test_address := "0000000000000000000010000"; -- адрес 0x0000010
+    
+    master_burst_read(avs, read_data_array, clk_12MHz, test_address, 64);
+    
+    wait for 2 us;
+    report "TEST 5: DONE - Burst read of 8 words at address 0x0000010" severity note;
+    
+    -- вывод прочитанных данных
+    for i in 0 to 7 loop
+      report "Read word " & integer'image(i) & ": 0x" & 
+             integer'image(CONV_INTEGER(read_data_array(i)(31 downto 0))) 
+             severity note;
+    end loop;
+    
+    
+    -- TEST 6: несколько последовательных операций
+    report "TEST 6: Multiple Sequential Operations" severity note;
+    
+    -- запись 1
+    master_single_write(
+      avs       => avs,
+      clk       => clk_12MHz,
+      address   => "0000000000000000000100000", -- 0x0000020
+      writedata => X"1111111111111111",
+      bytecount => 8
+    );
+    
+    wait for 500 ns;
+    
+    -- запись 2
+    master_single_write(
+      avs       => avs,
+      clk       => clk_12MHz,
+      address   => "0000000000000000000100100", -- 0x0000028
+      writedata => X"2222222222222222",
+      bytecount => 8
+    );
+    
+    wait for 500 ns;
+    
+    -- чтение 1
+    master_single_read(
+      avs       => avs,
+      clk       => clk_12MHz,
+      address   => "0000000000000000000100000",
+      bytecount => 8
+    );
+    
+    wait until avs.read_data_valid = '1';
+    wait for 500 ns;
+    
+    report "TEST 6: DONE - Sequential operations" severity note;
+    
+    
+    -- TEST 7: burst запись с невыровненным адресом
+    report "TEST 7: Burst Write with Unaligned Address" severity note;
+    
+    -- подготовка данных
+    for i in 0 to 7 loop
+      write_data_array(i) <= CONV_STD_LOGIC_VECTOR(16#B0000000# + i*16#01010101#, 64);
+    end loop;
+    
+    test_address := "0000000000000000000110011"; -- адрес 0x0000033 (невыровненный)
+    
+    master_burst_write(avs, write_data_array, clk_12MHz, test_address, 60);
+    
+    wait for 2 us;
+    report "TEST 7: DONE - Burst write with unaligned address" severity note;
+    
+    
+    -- TEST 8: максимальный burst
+    report "TEST 8: Maximum Burst (16 words)" severity note;
+    
+    -- подготовка данных
+    for i in 0 to 15 loop
+      write_data_array(i) <= CONV_STD_LOGIC_VECTOR(16#C0000000# + i*16#00100000#, 64);
+    end loop;
+    
+    test_address := "0000000000000000001000000"; -- адрес 0x0000040
+    
+    master_burst_write(avs, write_data_array, clk_12MHz, test_address, 128);
+    
+    wait for 3 us;
+    report "TEST 8: DONE - Maximum burst write" severity note;
+    
+    
+    -- завершение тестирования
+    wait for 5 us;
+    
+    report "All tests completed successfully!" severity note;
+    
+    sim_done <= true;
     wait;
-  end process;
+    
+  end process test_process;
 
-end behavior;
+end architecture behavioral;
