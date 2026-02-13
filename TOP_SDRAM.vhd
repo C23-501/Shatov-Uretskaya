@@ -47,7 +47,10 @@ entity TOP_SDRAM is
     nWE         : out std_logic;
     CKE         : out std_logic;
     DQM         : out std_logic_vector(1 downto 0);
-	 DQ    		 : out std_logic_vector(15 downto 0)
+	 DQ    		 : out std_logic_vector(15 downto 0);
+	 sdram_clk_out    : out   std_logic; --добавлен для памяти
+	pll_locked_out : out std_logic;
+	avalon_clk_out : out std_logic
   );
 end entity TOP_SDRAM;
 
@@ -477,7 +480,7 @@ begin
         wr_clk   => pll_clk_160MHz,
         wr_empty => open,
         wr_full  => fsm_wr_data_full,
-        wr_used  => open,
+        wr_used  => fsm_wr_data_used,--??
         wr_reset => reset_sdram_active,
         wr_en    => fsm_wr_data_en,
         
@@ -632,6 +635,7 @@ SDRAM_Subsystem_inst : SdramSubsys
         State_out => s_StateSubsys
     );	 
 
---  sdram_clk <= pll_clk_160MHz;
-
+  sdram_clk_out <= pll_clk_160MHz;
+  pll_locked_out <= pll_locked;
+  avalon_clk_out <= pll_clk_80MHz;
 end architecture rtl;

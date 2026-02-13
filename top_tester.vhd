@@ -6,21 +6,23 @@ use work.TOP_SDRAM_package.all;
 
 entity top_tester is
   port (
-    clk_12MHz : in    std_logic;
-    reset_n   : in    std_logic;
+	 clk_12MHz : in    std_logic;
+	 avalon_clk_out : in    std_logic;
+    reset_n   : out    std_logic; --in 
+	 pll_locked : in std_logic;
+	 
     avs       : inout avlmm_a24b_d64_t;
     sim_done  : out   boolean
   );
 end entity top_tester;
 
 architecture behavioral of top_tester is
-  
-  -- сигналы для burst операций
+  -- массивы для burst операций
   signal write_data_array : my_ram64(0 to 31) := (others => (others => '0'));
   signal read_data_array  : my_ram64(0 to 31) := (others => (others => '0'));
   
 begin
-
+    
   -- основной тестовый процесс
   test_process : process
     variable test_address : std_logic_vector(24 downto 0);
@@ -31,9 +33,24 @@ begin
     sim_done <= false;
     
     -- ждем окончания сброса и стабилизации PLL
-    wait until reset_n = '1';
-    wait for 2 us; -- время для инициализации PLL и FIFO
-    
+	 reset_n <= '0';
+	 avs.address_master     <= (others => '0');
+    avs.read_master        <= '0';
+    avs.write_master       <= '0';
+    avs.write_data_master  <= (others => '0');
+	 avs.byte_enable_master <= (others => '0');
+    avs.burstcount_master  <= (others => '0');
+    avs.burstenable_master <= '0';
+--	 avs.read_data_avs   <= (others => 'Z');
+  --  avs.waitrequest_avs <= 'Z';
+ --   avs.read_data_valid <= 'Z';
+	 
+	 wait_clock(1,clk_12MHz);
+	 reset_n <= '1';
+	 wait_clock(1,clk_12MHz);
+	 wait until pll_locked = '1';
+	 wait_clock(5,clk_12MHz);
+	 
     report "START: TOP_SDRAM Testing" severity note;
     
     
@@ -45,7 +62,7 @@ begin
     
     master_single_write(
       avs       => avs,
-      clk       => clk_12MHz,
+      clk       => avalon_clk_out,
       address   => test_address,
       writedata => test_data,
       bytecount => 8  -- 8 байт (полное слово)
@@ -63,7 +80,7 @@ begin
     
     master_single_write(
       avs       => avs,
-      clk       => clk_12MHz,
+      clk       => avalon_clk_out,
       address   => test_address,
       writedata => test_data,
       bytecount => 4
@@ -80,7 +97,7 @@ begin
     
     master_single_read(
       avs       => avs,
-      clk       => clk_12MHz,
+      clk       => avalon_clk_out,
       address   => test_address,
       bytecount => 8
     );
@@ -105,7 +122,7 @@ begin
     
     test_address := "0000000000000000000010000"; -- адрес 0x0000010
     
-    master_burst_write(avs, write_data_array, clk_12MHz, test_address, 64);
+    master_burst_write(avs, write_data_array, avalon_clk_out, test_address, 64);
     
     wait for 2 us;
     report "TEST 4: DONE - Burst write of 8 words at address 0x0000010" severity note;
@@ -116,7 +133,7 @@ begin
     
     test_address := "0000000000000000000010000"; -- адрес 0x0000010
     
-    master_burst_read(avs, read_data_array, clk_12MHz, test_address, 64);
+    master_burst_read(avs, read_data_array, avalon_clk_out, test_address, 64);
     
     wait for 2 us;
     report "TEST 5: DONE - Burst read of 8 words at address 0x0000010" severity note;
@@ -135,7 +152,7 @@ begin
     -- запись 1
     master_single_write(
       avs       => avs,
-      clk       => clk_12MHz,
+      clk       => avalon_clk_out,
       address   => "0000000000000000000100000", -- 0x0000020
       writedata => X"1111111111111111",
       bytecount => 8
@@ -146,7 +163,7 @@ begin
     -- запись 2
     master_single_write(
       avs       => avs,
-      clk       => clk_12MHz,
+      clk       => avalon_clk_out,
       address   => "0000000000000000000100100", -- 0x0000028
       writedata => X"2222222222222222",
       bytecount => 8
@@ -157,7 +174,7 @@ begin
     -- чтение 1
     master_single_read(
       avs       => avs,
-      clk       => clk_12MHz,
+      clk       => avalon_clk_out,
       address   => "0000000000000000000100000",
       bytecount => 8
     );
@@ -194,7 +211,7 @@ begin
     
     test_address := "0000000000000000001000000"; -- адрес 0x0000040
     
-    master_burst_write(avs, write_data_array, clk_12MHz, test_address, 128);
+    master_burst_write(avs, write_data_array, avalon_clk_out, test_address, 128);
     
     wait for 3 us;
     report "TEST 8: DONE - Maximum burst write" severity note;

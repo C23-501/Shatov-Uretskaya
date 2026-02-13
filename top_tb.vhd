@@ -10,8 +10,8 @@ architecture testbench of top_tb is
 
   constant CLK_12MHz_PERIOD : time := 83.333 ns;
   
-  signal clk_12MHz : std_logic := '0';
-  signal reset_n   : std_logic := '0';
+  signal clk_12MHz : std_logic;
+  signal reset_n   : std_logic;
   
   -- Avalon-MM сигналы (разделены на входы и выходы)
   signal address_master     : std_logic_vector(24 downto 0) := (others => '0');
@@ -34,6 +34,20 @@ architecture testbench of top_tb is
   signal CKE  : std_logic;
   signal DQM  : std_logic_vector(1 downto 0);
   signal DQ   : std_logic_vector(15 downto 0);
+  
+  -- Сигнал тактовой частоты SDRAM (160 МГц)
+  signal sdram_clk : std_logic; 
+  signal pll_locked_wire : std_logic;
+  signal avalon_clk : std_logic;
+  -- Сигналы SDRAM (для модели памяти)
+  signal A_SDRAM    : std_logic_vector(11 downto 0);
+  signal BS_SDRAM   : std_logic_vector(1 downto 0);
+  signal nCS_SDRAM  : std_logic;
+  signal nRAS_SDRAM : std_logic;
+  signal nCAS_SDRAM : std_logic;
+  signal nWE_SDRAM  : std_logic;
+  signal CKE_SDRAM  : std_logic;
+  signal DQM_SDRAM  : std_logic_vector(1 downto 0);
   -- Record для тестера
   signal avs : avlmm_a24b_d64_t;
   
@@ -74,9 +88,34 @@ architecture testbench of top_tb is
       nWE                : out std_logic;
       CKE                : out std_logic;
       DQM                : out std_logic_vector(1 downto 0);
-      DQ                 : out std_logic_vector(15 downto 0)
-    );
+      DQ                 : out std_logic_vector(15 downto 0);
+		sdram_clk_out      : out std_logic;
+		pll_locked_out : out std_logic;
+		avalon_clk_out : out std_logic
+ 
+	 );
   end component;
+  
+  COMPONENT mt48lc4m16a2
+    GENERIC (
+       addr_bits : integer := 12;
+       data_bits : integer := 16;
+       col_bits  : integer := 8;
+       mem_sizes : integer := 1048575
+    );
+    PORT (
+       Dq    : INOUT  std_logic_vector (data_bits - 1 DOWNTO 0);
+       Addr  : IN     std_logic_vector (addr_bits - 1 DOWNTO 0);
+       Ba    : IN     std_logic_vector (1 DOWNTO 0);
+       Clk   : IN     std_logic ;
+       Cke   : IN     std_logic ;
+       Cs_n  : IN     std_logic ;
+       Ras_n : IN     std_logic ;
+       Cas_n : IN     std_logic ;
+       We_n  : IN     std_logic ;
+       Dqm   : IN     std_logic_vector (1 DOWNTO 0)
+    );
+   END COMPONENT;
 
 begin
 
@@ -113,7 +152,16 @@ begin
   byte_enable_master <= avs.byte_enable_master;
   burstcount_master  <= avs.burstcount_master;
   burstenable_master <= avs.burstenable_master;
-
+  --задержки
+  nCS_SDRAM  <= nCS;
+  nRAS_SDRAM <= nRAS;
+  nCAS_SDRAM <= nCAS;
+  nWE_SDRAM  <= nWE;
+  CKE_SDRAM  <= CKE;
+  DQM_SDRAM  <= DQM;
+  BS_SDRAM   <= BS;
+  A_SDRAM    <= A;
+  
   -- DUT
   DUT : TOP_SDRAM
     generic map (
@@ -150,25 +198,49 @@ begin
       nWE => nWE,
       CKE => CKE,
       DQM => DQM,
-      DQ  => DQ
+      DQ  => DQ,
+		sdram_clk_out => sdram_clk,
+		pll_locked_out => pll_locked_wire,
+		avalon_clk_out   => avalon_clk
 		);
-
+		
+		U_SDRAM : mt48lc4m16a2
+    GENERIC MAP (
+       addr_bits => 12,
+       data_bits => 16,
+       col_bits  => 8,
+       mem_sizes => 1048575 -- 4 Meg x 16 (1 МБ * 16 бит)
+    )
+    PORT MAP (
+       Dq    => DQ,
+       Addr  => A_SDRAM, 
+       Ba    => BS_SDRAM,
+       Clk   => sdram_clk,  -- 160 МГц
+       Cke   => CKE_SDRAM,
+       Cs_n  => nCS_SDRAM,
+       Ras_n => nRAS_SDRAM,
+       Cas_n => nCAS_SDRAM,
+       We_n  => nWE_SDRAM,
+       Dqm   => DQM_SDRAM
+    );
   -- Процесс сброса
-  reset_process : process
-  begin
-    reset_n <= '0';
-    wait for 500 ns;
-    reset_n <= '1';
-    wait;
-  end process;
+--  reset_process : process
+--  begin
+--    reset_n <= '0';
+--    wait for 500 ns;
+--    reset_n <= '1';
+ --   wait;
+--  end process;
 
   -- Тестер
   tester_inst : entity work.top_tester
     port map (
       clk_12MHz => clk_12MHz,
+		avalon_clk_out => avalon_clk,
       reset_n   => reset_n,
       avs       => avs,
-      sim_done  => sim_done
+      sim_done  => sim_done,
+		pll_locked => pll_locked_wire
     );
 
 end architecture testbench;

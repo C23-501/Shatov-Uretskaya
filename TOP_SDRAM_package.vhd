@@ -187,7 +187,7 @@ begin
          report "Not single operation" 
          severity failure;
     else
-    avs.waitrequest_avs <= 'Z';
+   avs.waitrequest_avs <= 'Z';
 	 wait_clock(0,clk);
 	 avs.write_master <= '1';
     avs.read_master <= '0';
