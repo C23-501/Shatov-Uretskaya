@@ -65,13 +65,13 @@ procedure master_single_read(--добавить определение того,
   );
   
   -- burst чтение
-  procedure master_burst_read(
-    signal avs    : inout avlmm_a24b_d64_t;
-    signal data   : out my_ram64;
-    signal clk    : in std_logic;
-    address       : in std_logic_vector(24 downto 0);
-    bytecount     : in integer
-  );
+--  procedure master_burst_read(
+--    signal avs    : inout avlmm_a24b_d64_t;
+--    signal data   : out my_ram64;
+--    signal clk    : in std_logic;
+--    address       : in std_logic_vector(24 downto 0);
+--    bytecount     : in integer
+--  );
   
 end package TOP_SDRAM_package;
 
@@ -94,7 +94,7 @@ package body TOP_SDRAM_package is
             return false;
         end if;
     end function;
---вычисление byteenable
+--вычисление byteenable для одиночной записи
 function calc_byte_enable(address : std_logic_vector; byte_count : integer) return std_logic_vector is
         variable be : std_logic_vector(7 downto 0) := (others => '0');
         variable start_idx : integer;
@@ -249,7 +249,7 @@ procedure master_burst_write(
   -- переменные для расчета burstcount
   variable v_burst_count_vec : std_logic_vector(4 downto 0);
   variable v_burst_len_int   : integer;
- 
+  variable i : integer;
  begin --проверка на бурст операцию
   if is_single(bytecount, address) = true then
     assert false 
@@ -269,20 +269,26 @@ procedure master_burst_write(
 	 avs.burstcount_master  <= v_burst_count_vec;
 	 wait_clock(0,clk);
     avs.burstenable_master  <= '0';
-	 
-	  for i in 0 to v_burst_len_int - 1 loop -- посылаем слова в Avalon
-			avs.write_data_master  <= data(i);
-			avs.byte_enable_master <= calc_burst_byte_enable(i, address, bytecount);
-			loop
-				 -- Проверяем waitrequest. Если '0', значит данные приняты, выходим из цикла
-				 if avs.waitrequest_avs = '0' then
-					  exit; 
-				 end if;
-				 wait_clock(0, clk);
-			end loop;
-			wait_clock(0, clk);
-			
-	  end loop;
+	  
+	 i := 0;
+	while i < v_burst_len_int loop
+		 -- 1. Выставляем данные и byte enable
+		 avs.write_data_master  <= data(i);
+		 avs.byte_enable_master <= calc_burst_byte_enable(i, address, bytecount);
+
+		 -- 2. Ждем снятия waitrequest
+		 loop
+			  -- Если slave готов (waitrequest = '0'), выходим из цикла ожидания
+			  if avs.waitrequest_avs = '0' then
+					exit; 
+			  end if;
+			  -- Иначе ждем такт и проверяем снова
+			  wait_clock(0, clk);
+		 end loop;
+
+		 wait_clock(0, clk);
+		 i := i + 1;
+	end loop;
 	 
    --завершаем запись
 		avs.write_master       <= '0';
@@ -296,58 +302,58 @@ end procedure;
 
 
 
---бурст чтение
-procedure master_burst_read(
-    signal avs    : inout avlmm_a24b_d64_t;  -- Сигналы Avalon-MM интерфейса
-    signal data   : out my_ram64;            -- выходной массив для считанных данных
-    signal clk    : in std_logic;
-    address       : in std_logic_vector(24 downto 0);
-    bytecount     : in integer
-) is
-	 -- переменные burstcount
-    variable v_burst_count_vec : std_logic_vector(4 downto 0);
-    variable v_burst_len_int   : integer;
-begin
-	-- проверка на одиночное чтение
-  if is_single(bytecount, address) = true then
-        report "Not burst operation" severity failure;
-    else
-	 
-	v_burst_count_vec := calc_burst_count(address, bytecount);
-   v_burst_len_int   := CONV_INTEGER(v_burst_count_vec);
-	avs.waitrequest_avs    <= 'Z'; 
-	-- согласно спецификации подаем сигнал чтения (начало чтения)
-	wait_clock(0,clk);
-   avs.read_master       <= '1';
-   avs.write_master       <= '0';
-   avs.burstenable_master <='1';
-   avs.address_master     <= address;
-   avs.burstcount_master  <= v_burst_count_vec;
-	-- согласно спецификации подаем сигнал окончания чтения
-	wait_clock(0,clk);
-   avs.read_master       <= '0'; 
-   avs.burstenable_master <='0';
-	avs.address_master     <= (others => '0');
-   avs.byte_enable_master <= (others => '0');
-   avs.burstcount_master  <= (others => '0');
-	-- записываем считанные Avalon данные в массив
-   for i in 0 to v_burst_len_int - 1 loop
-	
-		-- Ждем появления сигнала read_data_valid
-		loop
-			 if avs.read_data_valid = '1' then
-				  -- Захватываем данные в массив
-				  data(i) <= avs.read_data_avs;
-				  exit; -- Данные пойманы, переходим к следующей итерации i
-			 end if;
-			 wait_clock(0, clk);
-		end loop;
-		
-  end loop;
-
-
-  end if;
-end procedure;
+----бурст чтение
+--procedure master_burst_read(
+--    signal avs    : inout avlmm_a24b_d64_t;  -- Сигналы Avalon-MM интерфейса
+--    signal data   : out my_ram64;            -- выходной массив для считанных данных
+--    signal clk    : in std_logic;
+--    address       : in std_logic_vector(24 downto 0);
+--    bytecount     : in integer
+--) is
+--	 -- переменные burstcount
+--    variable v_burst_count_vec : std_logic_vector(4 downto 0);
+--    variable v_burst_len_int   : integer;
+--begin
+--	-- проверка на одиночное чтение
+--  if is_single(bytecount, address) = true then
+--        report "Not burst operation" severity failure;
+--    else
+--	 
+--	v_burst_count_vec := calc_burst_count(address, bytecount);
+--   v_burst_len_int   := CONV_INTEGER(v_burst_count_vec);
+--	avs.waitrequest_avs    <= 'Z'; 
+--	-- согласно спецификации подаем сигнал чтения (начало чтения)
+--	wait_clock(0,clk);
+--   avs.read_master       <= '1';
+--   avs.write_master       <= '0';
+--   avs.burstenable_master <='1';
+--   avs.address_master     <= address;
+--   avs.burstcount_master  <= v_burst_count_vec;
+--	-- согласно спецификации подаем сигнал окончания чтения
+--	wait_clock(0,clk);
+--   avs.read_master       <= '0'; 
+--   avs.burstenable_master <='0';
+--	avs.address_master     <= (others => '0');
+--   avs.byte_enable_master <= (others => '0');
+--   avs.burstcount_master  <= (others => '0');
+--	-- записываем считанные Avalon данные в массив
+--   for i in 0 to v_burst_len_int - 1 loop
+--	
+--		-- Ждем появления сигнала read_data_valid
+--		loop
+--			 if avs.read_data_valid = '1' then
+--				  -- Захватываем данные в массив
+--				  data(i) <= avs.read_data_avs;
+--				  exit; -- Данные пойманы, переходим к следующей итерации i
+--			 end if;
+--			 wait_clock(0, clk);
+--		end loop;
+--		
+--  end loop;
+--
+--
+--  end if;
+--end procedure;
 
 
 end package body TOP_SDRAM_package;
