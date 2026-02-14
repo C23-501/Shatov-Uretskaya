@@ -7,7 +7,7 @@ use work.sdram_subsys_package.all;
 
 entity TOP_SDRAM is
   generic (
- -- DATA_WIDTH      : integer := 64;
+  DATA_WIDTH      : integer := 64;
   FIFO_DEPTH      : integer := 512;
   Burst_length    : integer := 8;
   CAS_Latency     : integer := 3;
@@ -365,7 +365,9 @@ begin
   -- Синхронизируем reset для Avalon domain
   process(clk_avalon, global_reset_n)
   begin
-    if rising_edge(clk_avalon) then
+	if global_reset_n = '0' then
+	reset_avalon_ff <= (others => '0');
+    elsif rising_edge(clk_avalon) then
         reset_avalon_ff(0) <= global_reset_n;
         reset_avalon_ff(1) <= reset_avalon_ff(0);
     end if;
@@ -375,12 +377,16 @@ begin
   -- Синхронизируем reset для SDRAM domain
   process(clk_sdram, global_reset_n)
   begin
-    if rising_edge(clk_sdram) then
+  if global_reset_n = '0' then
+  reset_sdram_ff <= (others => '0');
+    elsif rising_edge(clk_sdram) then
         reset_sdram_ff(0) <= global_reset_n;
         reset_sdram_ff(1) <= reset_sdram_ff(0);
 	 end if; 
 	end process;
   reset_sdram_n <= reset_sdram_ff(1);
+  
+  
   -- Avalon slave соеденяется с FIFO
   avalon_inst : AvalonMM_Slave
   port map (

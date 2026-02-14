@@ -153,14 +153,16 @@ begin
   burstcount_master  <= avs.burstcount_master;
   burstenable_master <= avs.burstenable_master;
   --задержки
-  nCS_SDRAM  <= nCS;
-  nRAS_SDRAM <= nRAS;
-  nCAS_SDRAM <= nCAS;
-  nWE_SDRAM  <= nWE;
-  CKE_SDRAM  <= CKE;
-  DQM_SDRAM  <= DQM;
-  BS_SDRAM   <= BS;
-  A_SDRAM    <= A;
+   nCS_SDRAM <= nCS after 1.2 ns;
+   nRAS_SDRAM <= nRAS after 1.2 ns;
+   nCAS_SDRAM <= nCAS after 1.2 ns;
+   nWE_SDRAM <= nWE after 1.2 ns;
+   CKE_SDRAM <= CKE after 1.2 ns;
+   DQM_SDRAM <= DQM after 1.2 ns;
+   BS_SDRAM <= BS after 1.2 ns;
+   A_SDRAM <= A after 1.2 ns;
+  
+  
   
   -- DUT
   DUT : TOP_SDRAM
@@ -205,12 +207,11 @@ begin
 		);
 		
 		U_SDRAM : mt48lc4m16a2
-    GENERIC MAP (
-       addr_bits => 12,
-       data_bits => 16,
-       col_bits  => 8,
-       mem_sizes => 1048575 -- 4 Meg x 16 (1 МБ * 16 бит)
-    )
+--    GENERIC MAP (
+--       addr_bits => 12,
+--       data_bits => 16,
+--       col_bits  => 8,
+--       mem_sizes => 1048575 -- 4 Meg x 16 (1 МБ * 16 бит))
     PORT MAP (
        Dq    => DQ,
        Addr  => A_SDRAM, 
@@ -229,7 +230,7 @@ begin
 --    reset_n <= '0';
 --    wait for 500 ns;
 --    reset_n <= '1';
- --   wait;
+--    wait;
 --  end process;
 
   -- Тестер

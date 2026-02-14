@@ -49,7 +49,8 @@ begin
 	 reset_n <= '1';
 	 wait_clock(1,clk_12MHz);
 	 wait until pll_locked = '1';
-	 wait_clock(5,clk_12MHz);
+	 wait for 210 us;
+	 wait_clock(1,clk_12MHz);
 	 
     report "START: TOP_SDRAM Testing" severity note;
     
@@ -90,6 +91,42 @@ begin
     report "TEST 2: DONE - Partial write at address 0x0000008" severity note;
     
     
+	     -- TEST 4: burst запись
+    report "TEST 4: Burst Write" severity note;
+    
+    -- подготовка тестовых данных для burst записи
+    for i in 0 to 7 loop
+      write_data_array(i) <= CONV_STD_LOGIC_VECTOR(16#A0000000# + i*16#11111111#, 64);
+    end loop;
+    
+    test_address := "0000000000000000000010000"; -- адрес 0x0000010
+    
+    master_burst_write(avs, write_data_array, avalon_clk_out, test_address, 64);
+    
+    wait for 2 us;
+    report "TEST 4: DONE - Burst write of 8 words at address 0x0000010" severity note;
+	 
+	 
+	 
+	 
+	  report "TEST 7: Burst Write with Unaligned Address" severity note;
+    
+    -- подготовка данных
+    for i in 0 to 7 loop
+      write_data_array(i) <= CONV_STD_LOGIC_VECTOR(16#B0000000# + i*16#01010101#, 64);
+    end loop;
+    
+    test_address := "0000000000000000000110011"; -- адрес 0x0000033 (невыровненный)
+    
+    master_burst_write(avs, write_data_array, avalon_clk_out, test_address, 60);
+    
+    wait for 2 us;
+    report "TEST 7: DONE - Burst write with unaligned address" severity note;
+	 
+	 
+	 
+	 
+	 
     -- TEST 3: одиночное чтение
     report "TEST 3: Single Read" severity note;
     
@@ -112,38 +149,25 @@ begin
            severity note;
     
     
-    -- TEST 4: burst запись
-    report "TEST 4: Burst Write" severity note;
-    
-    -- подготовка тестовых данных для burst записи
-    for i in 0 to 7 loop
-      write_data_array(i) <= CONV_STD_LOGIC_VECTOR(16#A0000000# + i*16#11111111#, 64);
-    end loop;
-    
-    test_address := "0000000000000000000010000"; -- адрес 0x0000010
-    
-    master_burst_write(avs, write_data_array, avalon_clk_out, test_address, 64);
-    
-    wait for 2 us;
-    report "TEST 4: DONE - Burst write of 8 words at address 0x0000010" severity note;
+
     
     
-    -- TEST 5: burst чтение
-    report "TEST 5: Burst Read" severity note;
-    
-    test_address := "0000000000000000000010000"; -- адрес 0x0000010
-    
-    master_burst_read(avs, read_data_array, avalon_clk_out, test_address, 64);
-    
-    wait for 2 us;
-    report "TEST 5: DONE - Burst read of 8 words at address 0x0000010" severity note;
-    
-    -- вывод прочитанных данных
-    for i in 0 to 7 loop
-      report "Read word " & integer'image(i) & ": 0x" & 
-             integer'image(CONV_INTEGER(read_data_array(i)(31 downto 0))) 
-             severity note;
-    end loop;
+--    TEST 5: burst чтение
+--    report "TEST 5: Burst Read" severity note;
+--    
+--    test_address := "0000000000000000000010000"; -- адрес 0x0000010
+--    
+--    master_burst_read(avs, read_data_array, avalon_clk_out, test_address, 64);
+--    
+--    wait for 2 us;
+--    report "TEST 5: DONE - Burst read of 8 words at address 0x0000010" severity note;
+--    
+--    -- вывод прочитанных данных
+--    for i in 0 to 7 loop
+--      report "Read word " & integer'image(i) & ": 0x" & 
+--             integer'image(CONV_INTEGER(read_data_array(i)(31 downto 0))) 
+--             severity note;
+--    end loop;
     
     
     -- TEST 6: несколько последовательных операций

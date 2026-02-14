@@ -195,7 +195,8 @@ begin
     avs.write_data_master <= writedata;
     avs.byte_enable_master <= calc_byte_enable(address, bytecount);
 	 wait until avs.waitrequest_avs = '0';
-	 wait_clock(0,clk);
+	 wait until avs.waitrequest_avs = '1';
+	 wait_clock(1,clk);
     avs.write_master <= '0';
     avs.address_master <= (others => '0');
     avs.write_data_master <= (others => '0');
