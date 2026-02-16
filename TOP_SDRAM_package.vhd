@@ -65,13 +65,13 @@ procedure master_single_read(--добавить определение того,
   );
   
   -- burst чтение
---  procedure master_burst_read(
---    signal avs    : inout avlmm_a24b_d64_t;
---    signal data   : out my_ram64;
---    signal clk    : in std_logic;
---    address       : in std_logic_vector(24 downto 0);
---    bytecount     : in integer
---  );
+  procedure master_burst_read(
+    signal avs    : inout avlmm_a24b_d64_t;
+    signal data   : out my_ram64;
+    signal clk    : in std_logic;
+    address       : in std_logic_vector(24 downto 0);
+    bytecount     : in integer
+  );
   
 end package TOP_SDRAM_package;
 
@@ -181,23 +181,36 @@ procedure master_single_write(--добавить определение того
   
 ) is
 begin
-  -- проверка точно ли это одиночная запись adress+bytecount
+  -- проверка точно ли это одиночная запись
 	if is_single(bytecount, address) = false then
 	assert false 
          report "Not single operation" 
          severity failure;
     else
    avs.waitrequest_avs <= 'Z';
-	 wait_clock(0,clk);
+	 wait_clock(0, clk);
 	 avs.write_master <= '1';
     avs.read_master <= '0';
 	 avs.address_master <= address;
     avs.write_data_master <= writedata;
     avs.byte_enable_master <= calc_byte_enable(address, bytecount);
-	 wait until avs.waitrequest_avs = '0';
-	 wait until avs.waitrequest_avs = '1';
-	 wait_clock(1,clk);
-    avs.write_master <= '0';
+	 
+	 
+--	 loop
+--         -- Проверяем waitrequest строго по фронту клока
+--         wait until rising_edge(clk);
+--         wait for 10 ps; -- Маленькая дельта, чтобы прочитать обновленное значение
+--         if avs.waitrequest_avs = '0' then
+--           exit; -- Успех, выходим
+--         end if;
+--         -- Если waitrequest='1', цикл повторяется, сигналы write висят
+--       end loop;
+--	 wait until rising_edge(clk);--?
+	wait until avs.waitrequest_avs = '0';
+	 wait_clock(0,clk);
+	avs.write_master <= '0';
+
+
     avs.address_master <= (others => '0');
     avs.write_data_master <= (others => '0');
     avs.byte_enable_master <= (others => '0');
@@ -224,6 +237,16 @@ procedure master_single_read(--добавить определение того,
     avs.write_master <= '0';
     avs.address_master <= address;	 
     avs.byte_enable_master <= calc_byte_enable(address,bytecount);
+-- 
+--	 loop
+--		-- Проверяем waitrequest строго по фронту клока
+--		wait until rising_edge(clk);
+----		wait for 10 ps;
+--		if avs.waitrequest_avs = '0' then
+--		  exit; -- Успех, выходим
+--		end if;
+--		-- Если waitrequest='1', цикл повторяется, сигналы write висят
+--	 end loop;
 	 wait until avs.waitrequest_avs = '0';
 	 wait_clock(0,clk);
     avs.read_master <= '0';
@@ -268,15 +291,22 @@ procedure master_burst_write(
     avs.burstenable_master   <= '1';
 	 avs.address_master      <= address;
 	 avs.burstcount_master  <= v_burst_count_vec;
+	 avs.write_data_master  <= data(0);
+	 avs.byte_enable_master <= calc_burst_byte_enable(0, address, bytecount);
+	 --адресс
+	 --avs.write_data_master  <= data(0);
+	 --avs.byte_enable_master <= calc_burst_byte_enable(0, address, bytecount);
 	 wait_clock(0,clk);
     avs.burstenable_master  <= '0';
 	  
 	 i := 0;
 	while i < v_burst_len_int loop
 		 -- 1. Выставляем данные и byte enable
+		 if i> 0 then
 		 avs.write_data_master  <= data(i);
 		 avs.byte_enable_master <= calc_burst_byte_enable(i, address, bytecount);
-
+		 end if;
+		 
 		 -- 2. Ждем снятия waitrequest
 		 loop
 			  -- Если slave готов (waitrequest = '0'), выходим из цикла ожидания
@@ -286,75 +316,92 @@ procedure master_burst_write(
 			  -- Иначе ждем такт и проверяем снова
 			  wait_clock(0, clk);
 		 end loop;
-
 		 wait_clock(0, clk);
+		 if i = 0 then
+		avs.address_master     <= (others => '0');
+		avs.burstcount_master  <= (others => '0');
+		end if;
 		 i := i + 1;
 	end loop;
 	 
    --завершаем запись
 		avs.write_master       <= '0';
-      avs.burstenable_master <= '0';
-      avs.address_master     <= (others => '0');
       avs.write_data_master  <= (others => '0');
       avs.byte_enable_master <= (others => '0');
-      avs.burstcount_master  <= (others => '0');
   end if;
 end procedure;
 
 
 
-----бурст чтение
---procedure master_burst_read(
---    signal avs    : inout avlmm_a24b_d64_t;  -- Сигналы Avalon-MM интерфейса
---    signal data   : out my_ram64;            -- выходной массив для считанных данных
---    signal clk    : in std_logic;
---    address       : in std_logic_vector(24 downto 0);
---    bytecount     : in integer
---) is
---	 -- переменные burstcount
---    variable v_burst_count_vec : std_logic_vector(4 downto 0);
---    variable v_burst_len_int   : integer;
---begin
---	-- проверка на одиночное чтение
---  if is_single(bytecount, address) = true then
---        report "Not burst operation" severity failure;
---    else
---	 
---	v_burst_count_vec := calc_burst_count(address, bytecount);
---   v_burst_len_int   := CONV_INTEGER(v_burst_count_vec);
---	avs.waitrequest_avs    <= 'Z'; 
---	-- согласно спецификации подаем сигнал чтения (начало чтения)
---	wait_clock(0,clk);
---   avs.read_master       <= '1';
---   avs.write_master       <= '0';
---   avs.burstenable_master <='1';
---   avs.address_master     <= address;
---   avs.burstcount_master  <= v_burst_count_vec;
---	-- согласно спецификации подаем сигнал окончания чтения
---	wait_clock(0,clk);
---   avs.read_master       <= '0'; 
---   avs.burstenable_master <='0';
---	avs.address_master     <= (others => '0');
---   avs.byte_enable_master <= (others => '0');
---   avs.burstcount_master  <= (others => '0');
---	-- записываем считанные Avalon данные в массив
---   for i in 0 to v_burst_len_int - 1 loop
---	
---		-- Ждем появления сигнала read_data_valid
+--бурст чтение
+procedure master_burst_read(
+    signal avs    : inout avlmm_a24b_d64_t;  -- Сигналы Avalon-MM интерфейса
+    signal data   : out my_ram64;            -- выходной массив для считанных данных
+    signal clk    : in std_logic;
+    address       : in std_logic_vector(24 downto 0);
+	 bytecount     : in integer
+) is
+	 -- переменные для burstcount
+    variable v_burst_count_vec : std_logic_vector(4 downto 0);
+    variable v_burst_len_int   : integer;
+begin
+	-- проверка на одиночное чтение
+  if is_single(bytecount, address) = true then
+        report "Not burst operation" severity failure;
+	 
+	v_burst_len_int   := CONV_INTEGER(v_burst_count_vec);
+	v_burst_count_vec := calc_burst_count(address, bytecount);
+	avs.waitrequest_avs    <= 'Z'; 
+	-- согласно спецификации подаем сигнал чтения (начало чтения)
+	wait_clock(0,clk);
+   avs.read_master       <= '1';
+   avs.write_master       <= '0';
+   avs.burstenable_master <='1';
+   avs.address_master     <= address;
+   avs.burstcount_master  <= v_burst_count_vec;
+	--согласно спецификации если burstcount >1, то в byteebble все единицы
+	if v_burst_len_int = 1 then
+	avs.byte_enable_master <= calc_burst_byte_enable(0, address, bytecount);
+   else
+		avs.byte_enable_master <= (others => '1');
+   end if;
+   -- ждём сигнала waitrequest чтобы выключить address,burstenable,burstcount 
+	while avs.waitrequest_avs = '1' loop
+			 wait_clock(0, clk);
+		 end loop;
+	wait_clock(0,clk);
+   avs.burstenable_master <='0';
+	avs.address_master     <= (others => '0');
+   avs.burstcount_master  <= (others => '0');
+
+	wait until avs.read_data_valid = '1';
+	-- записываем считанные Avalon данные в массив
+	wait_clock(0,clk);
+	data(0) <= avs.read_data_avs;
+	avs.read_master <= '0';
+	for i in 1 to v_burst_len_int - 1 loop
+				wait_clock(0, clk);
+
+	end loop;
+    end if;
+end procedure;
+		-- Ждем появления сигнала read_data_valid
 --		loop
 --			 if avs.read_data_valid = '1' then
---				  -- Захватываем данные в массив
+--				  -- звгружаем считанные данные в массив
 --				  data(i) <= avs.read_data_avs;
---				  exit; -- Данные пойманы, переходим к следующей итерации i
+--				  if i = 0 then
+--					avs.read_master <= '0';--read_master выключается после первых считанных данных
+--					end if;
+--				  exit; 
 --			 end if;
---			 wait_clock(0, clk);
---		end loop;
---		
---  end loop;
---
---
---  end if;
---end procedure;
+
+		
+  --end loop;
+
+
+ 
+
 
 
 end package body TOP_SDRAM_package;
