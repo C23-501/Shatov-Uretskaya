@@ -1,0 +1,36 @@
+entity sdram_controller_top is
+    port (
+        clk          : in  std_logic;
+        reset_n      : in  std_logic;
+        -- Avalon-MM interface
+        av_address   : in  std_logic_vector(ADDR_WIDTH-1 downto 0);
+        av_write     : in  std_logic;
+        av_read      : in  std_logic;
+        av_writedata : in  std_logic_vector(63 downto 0);
+        av_readdata  : out std_logic_vector(63 downto 0);
+        av_waitrequest : out std_logic;
+		  
+		  i_clk           : in  std_logic;    
+		  i_nRst       : in  std_logic;    
+		  i_address_av       : in  std_logic_vector(ADDR_WIDTH-1 downto 0);    
+		  i_read_av          : in  std_logic;    
+		  i_write_av         : in  std_logic;    
+		  i_writedata_av     : in  std_logic_vector(DATA_WIDTH-1 downto 0);    
+		  i_byteenable_av    : in  std_logic_vector(7 downto 0);    
+		  i_burstcount_av    : in  std_logic_vector(BURSTCOUNT_WIDTH-1 downto 0);    
+		  o_readdata_av      : out std_logic_vector(DATA_WIDTH-1 downto 0);    
+		  o_waitrequest_av   : out std_logic
+		  
+		  
+        -- SDRAM interface
+        sdram_clk    : out std_logic;
+        sdram_addr   : out std_logic_vector(12 downto 0);
+        sdram_ba     : out std_logic_vector(1 downto 0);
+        sdram_dq     : inout std_logic_vector(DATA_WIDTH-1 downto 0);
+        sdram_cke    : out std_logic;
+        sdram_cs_n   : out std_logic;
+        sdram_ras_n  : out std_logic;
+        sdram_cas_n  : out std_logic;
+        sdram_we_n   : out std_logic
+    );
+end entity;
